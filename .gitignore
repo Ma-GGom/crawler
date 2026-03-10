@@ -201,6 +201,14 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# AI agent shared/local docs and workspace links
+AGENTS.md
+ai-context/
+.ai-docs/
+.codex/
+.claude/
+.aider*
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
