@@ -1,4 +1,4 @@
-﻿from application.port.inbound.crawl_source_usecase import CrawlSourceUseCase
+﻿from port.inbound.crawl_source_usecase import CrawlSourceUseCase
 from domain.model.marathon_event import MarathonEvent
 
 

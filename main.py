@@ -1,4 +1,5 @@
-﻿from pathlib import Path
+from pathlib import Path
+import logging
 import sys
 
 
@@ -13,31 +14,27 @@ def _ensure_src_on_path() -> None:
 def main() -> int:
     _ensure_src_on_path()
 
-    print("Ma-GGom crawler started: fetch + parse marathon events")
+    from app.logging_config import configure_logging
+    from app.settings import load_settings
+
+    settings = load_settings()
+    configure_logging(settings.log_level)
+    logger = logging.getLogger(__name__)
+    logger.info("crawler_started", extra={"env": settings.env})
+
     try:
-        from bootstrap.app import create_crawler_app
+        from app.app import create_crawler_app
 
         runner = create_crawler_app()
         events = runner.run_once()
     except ModuleNotFoundError as exc:
-        print(f"Dependency missing: {exc}")
+        logger.exception("dependency_missing", extra={"error": str(exc)})
         return 1
-    except Exception as exc:  # CLI safety net
-        print(f"Crawler failed: {exc}")
+    except Exception as exc:
+        logger.exception("crawler_failed", extra={"error": str(exc)})
         return 1
 
-    print(f"Found {len(events)} events")
-    print("--- all events ---")
-    for index, event in enumerate(events, start=1):
-        print(f"[{index}] date: {event.date_text}")
-        print(f"    title: {event.title}")
-        print(f"    location: {event.location}")
-        print(f"    link: {event.link_url}")
-        print(f"    registration_period: {event.registration_period}")
-        print(f"    official_website_url: {event.official_website_url}")
-        print(f"    source: {event.source_name}")
-        print(f"    crawled_at_kst: {event.crawled_at_kst}")
-
+    logger.info("crawler_finished", extra={"event_count": len(events)})
     return 0
 
 

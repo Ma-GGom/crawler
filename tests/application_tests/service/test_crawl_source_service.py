@@ -8,10 +8,13 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from application.port.outbound.event_extract_port import EventExtractPort
-from application.port.outbound.event_detail_fetch_port import EventDetailFetchPort
-from application.port.outbound.source_fetch_port import SourceFetchPort
+from port.outbound.event_detail_fetch_port import EventDetailFetchPort
+from port.outbound.event_extract_port import EventExtractPort
+from port.outbound.event_store_port import EventStorePort
+from port.outbound.raw_data_store_port import RawDataStorePort
+from port.outbound.source_fetch_port import SourceFetchPort
 from application.service.crawl_source_service import CrawlSourceService
+from application.service.source_crawler import SourceCrawler
 from domain.model.event_detail import MarathonEventDetail
 from domain.model.marathon_event import MarathonEvent
 from domain.model.source_payload import SourcePayload
@@ -28,9 +31,8 @@ class FakeSourceFetcher(SourceFetchPort):
 
 
 class FakeExtractor(EventExtractPort):
-    def extract(self, html: str) -> list[MarathonEvent]:
-        self._last_html = html
-        return [
+    def __init__(self, events: list[MarathonEvent] | None = None) -> None:
+        self._events = events or [
             MarathonEvent(
                 date_text="12/31(수)",
                 title="테스트 대회",
@@ -38,6 +40,10 @@ class FakeExtractor(EventExtractPort):
                 link_url="view.php?no=1",
             )
         ]
+
+    def extract(self, html: str) -> list[MarathonEvent]:
+        self._last_html = html
+        return self._events
 
 
 class FakeDetailFetcher(EventDetailFetchPort):
@@ -49,6 +55,61 @@ class FakeDetailFetcher(EventDetailFetchPort):
             registration_end_date=date(2026, 12, 1),
             event_date=date(2026, 12, 20),
         )
+
+
+class EmptyDetailFetcher(EventDetailFetchPort):
+    def fetch_detail(self, detail_url: str) -> MarathonEventDetail | None:
+        return MarathonEventDetail(
+            registration_period=None,
+            official_website_url="https://example.com/event",
+            registration_start_date=None,
+            registration_end_date=None,
+            event_date=None,
+        )
+
+
+class FakeEventStore(EventStorePort):
+    def __init__(self) -> None:
+        self.saved_batches: list[list[MarathonEvent]] = []
+
+    def upsert_events(self, events: list[MarathonEvent]) -> int:
+        self.saved_batches.append(list(events))
+        return len(events)
+
+
+class FakeRawDataStore(RawDataStorePort):
+    def __init__(self) -> None:
+        self.saved_records: list[dict[str, object]] = []
+        self.pruned_records: list[dict[str, object]] = []
+
+    def save(
+        self,
+        *,
+        source: str,
+        payload: dict[str, object],
+        parsed_status: str,
+    ) -> None:
+        self.saved_records.append(
+            {
+                "source": source,
+                "payload": payload,
+                "parsed_status": parsed_status,
+            }
+        )
+
+    def prune(
+        self,
+        *,
+        parsed_status: str,
+        older_than_days: int,
+    ) -> int:
+        self.pruned_records.append(
+            {
+                "parsed_status": parsed_status,
+                "older_than_days": older_than_days,
+            }
+        )
+        return 0
 
 
 class CrawlSourceServiceTest(unittest.TestCase):
@@ -91,6 +152,34 @@ class CrawlSourceServiceTest(unittest.TestCase):
         self.assertEqual("2026년11월1일~2026년12월1일", events[0].registration_period)
         self.assertEqual("https://example.com/event", events[0].official_website_url)
 
+    def test_keep_existing_event_date_when_detail_event_date_missing(self) -> None:
+        fetched_at = datetime.now(KST)
+        payload = SourcePayload(
+            source_name="test-source",
+            source_url="https://example.com/list",
+            html="<table></table>",
+            fetched_at_kst=fetched_at,
+        )
+        service = CrawlSourceService(
+            source_fetcher=FakeSourceFetcher(payload),
+            event_extractor=FakeExtractor(
+                [
+                    MarathonEvent(
+                        date_text="12/31(수)",
+                        title="테스트 대회",
+                        location="서울",
+                        link_url="view.php?no=1",
+                        event_date=date(2026, 12, 31),
+                    )
+                ]
+            ),
+            detail_fetcher=EmptyDetailFetcher(),
+        )
+
+        events = service.crawl()
+
+        self.assertEqual("2026-12-31", events[0].event_date.isoformat())
+
     def test_filter_out_when_registration_closed(self) -> None:
         class ClosedDetailFetcher(EventDetailFetchPort):
             def fetch_detail(self, detail_url: str) -> MarathonEventDetail | None:
@@ -132,7 +221,184 @@ class CrawlSourceServiceTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             service.crawl()
 
+    def test_merge_multiple_sources(self) -> None:
+        now = datetime.now(KST)
+        source_one = SourceCrawler(
+            source_fetcher=FakeSourceFetcher(
+                SourcePayload(
+                    source_name="source-a",
+                    source_url="https://example.com/a",
+                    html="<a></a>",
+                    fetched_at_kst=now,
+                )
+            ),
+            event_extractor=FakeExtractor(
+                [
+                    MarathonEvent(
+                        date_text="12/31(수)",
+                        title="A 대회",
+                        location="서울",
+                        link_url="https://example.com/a/1",
+                        event_date=date(2026, 12, 31),
+                    )
+                ]
+            ),
+        )
+        source_two = SourceCrawler(
+            source_fetcher=FakeSourceFetcher(
+                SourcePayload(
+                    source_name="source-b",
+                    source_url="https://example.com/b",
+                    html="<b></b>",
+                    fetched_at_kst=now,
+                )
+            ),
+            event_extractor=FakeExtractor(
+                [
+                    MarathonEvent(
+                        date_text="12/30(화)",
+                        title="B 대회",
+                        location="부산",
+                        link_url="https://example.com/b/1",
+                        event_date=date(2026, 12, 30),
+                    )
+                ]
+            ),
+        )
+
+        service = CrawlSourceService(source_crawlers=[source_one, source_two])
+
+        events = service.crawl()
+
+        self.assertEqual(2, len(events))
+        self.assertEqual(["source-a", "source-b"], [event.source_name for event in events])
+
+    def test_deduplicate_same_event(self) -> None:
+        now = datetime.now(KST)
+        same_event = MarathonEvent(
+            date_text="12/31(수)",
+            title="중복 대회",
+            location="서울",
+            link_url="https://example.com/dup",
+            event_date=date(2026, 12, 31),
+        )
+
+        source_one = SourceCrawler(
+            source_fetcher=FakeSourceFetcher(
+                SourcePayload(
+                    source_name="source-a",
+                    source_url="https://example.com/a",
+                    html="<a></a>",
+                    fetched_at_kst=now,
+                )
+            ),
+            event_extractor=FakeExtractor([same_event]),
+        )
+        source_two = SourceCrawler(
+            source_fetcher=FakeSourceFetcher(
+                SourcePayload(
+                    source_name="source-b",
+                    source_url="https://example.com/b",
+                    html="<b></b>",
+                    fetched_at_kst=now,
+                )
+            ),
+            event_extractor=FakeExtractor([same_event]),
+        )
+
+        service = CrawlSourceService(source_crawlers=[source_one, source_two])
+
+        events = service.crawl()
+
+        self.assertEqual(1, len(events))
+
+    def test_store_events_with_event_store(self) -> None:
+        fetched_at = datetime.now(KST)
+        payload = SourcePayload(
+            source_name="test-source",
+            source_url="https://example.com/list",
+            html="<table></table>",
+            fetched_at_kst=fetched_at,
+        )
+        event_store = FakeEventStore()
+        service = CrawlSourceService(
+            source_fetcher=FakeSourceFetcher(payload),
+            event_extractor=FakeExtractor(),
+            event_store=event_store,
+        )
+
+        events = service.crawl()
+
+        self.assertEqual(1, len(events))
+        self.assertEqual(1, len(event_store.saved_batches))
+        self.assertEqual(1, len(event_store.saved_batches[0]))
+        self.assertEqual("테스트 대회", event_store.saved_batches[0][0].title)
+
+    def test_store_raw_payload_done_status(self) -> None:
+        fetched_at = datetime.now(KST)
+        payload = SourcePayload(
+            source_name="test-source",
+            source_url="https://example.com/list",
+            html="<table></table>",
+            fetched_at_kst=fetched_at,
+        )
+        raw_store = FakeRawDataStore()
+        service = CrawlSourceService(
+            source_fetcher=FakeSourceFetcher(payload),
+            event_extractor=FakeExtractor(),
+            raw_data_store=raw_store,
+        )
+
+        service.crawl()
+
+        self.assertEqual(1, len(raw_store.saved_records))
+        self.assertEqual("DONE", raw_store.saved_records[0]["parsed_status"])
+        self.assertEqual("test-source", raw_store.saved_records[0]["source"])
+
+    def test_store_raw_payload_error_status(self) -> None:
+        stale_payload = SourcePayload(
+            source_name="test-source",
+            source_url="https://example.com/list",
+            html="<table></table>",
+            fetched_at_kst=datetime.now(KST) - timedelta(minutes=10),
+        )
+        raw_store = FakeRawDataStore()
+        service = CrawlSourceService(
+            source_fetcher=FakeSourceFetcher(stale_payload),
+            event_extractor=FakeExtractor(),
+            raw_data_store=raw_store,
+        )
+
+        with self.assertRaises(RuntimeError):
+            service.crawl()
+
+        self.assertEqual(1, len(raw_store.saved_records))
+        self.assertEqual("ERROR", raw_store.saved_records[0]["parsed_status"])
+
+    def test_prune_raw_payloads_by_retention_policy(self) -> None:
+        payload = SourcePayload(
+            source_name="test-source",
+            source_url="https://example.com/list",
+            html="<table></table>",
+            fetched_at_kst=datetime.now(KST),
+        )
+        raw_store = FakeRawDataStore()
+        service = CrawlSourceService(
+            source_fetcher=FakeSourceFetcher(payload),
+            event_extractor=FakeExtractor(),
+            raw_data_store=raw_store,
+            raw_done_retention_days=30,
+            raw_error_retention_days=90,
+        )
+
+        service.crawl()
+
+        self.assertEqual(2, len(raw_store.pruned_records))
+        self.assertEqual("DONE", raw_store.pruned_records[0]["parsed_status"])
+        self.assertEqual(30, raw_store.pruned_records[0]["older_than_days"])
+        self.assertEqual("ERROR", raw_store.pruned_records[1]["parsed_status"])
+        self.assertEqual(90, raw_store.pruned_records[1]["older_than_days"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

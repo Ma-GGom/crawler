@@ -213,3 +213,17 @@ ai-context/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# OS / Editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local environment variants
+.env.*
+
+# Local crawler runtime artifacts
+logs/
+tmp/
+output/

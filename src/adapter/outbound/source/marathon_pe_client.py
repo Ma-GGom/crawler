@@ -4,7 +4,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-from application.port.outbound.source_fetch_port import SourceFetchPort
+from port.outbound.source_fetch_port import SourceFetchPort
 from domain.model.source_payload import SourcePayload
 
 SOURCE_URL = "http://www.marathon.pe.kr/schedule_index.html"

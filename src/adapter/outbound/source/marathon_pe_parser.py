@@ -3,7 +3,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
-from application.port.outbound.event_extract_port import EventExtractPort
+from port.outbound.event_extract_port import EventExtractPort
 from domain.model.marathon_event import MarathonEvent
 from domain.rule.event_row_rule import (
     has_required_fields,

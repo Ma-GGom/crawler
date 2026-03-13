@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup, Tag
 
-from application.port.outbound.event_detail_fetch_port import EventDetailFetchPort
+from port.outbound.event_detail_fetch_port import EventDetailFetchPort
 from domain.model.event_detail import MarathonEventDetail
 
 DEFAULT_TIMEOUT_SECONDS = 10
