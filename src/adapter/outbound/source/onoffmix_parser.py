@@ -10,13 +10,37 @@ from domain.model.marathon_event import MarathonEvent
 ONOFFMIX_BASE_URL = "https://www.onoffmix.com"
 EVENT_LINK_PREFIX = "/event/"
 DATE_PATTERN = re.compile(r"(20\d{2})\.(\d{1,2})\.(\d{1,2})")
-RACE_KEYWORDS = ("마라톤", "러닝", "트레일", "울트라", "레이스")
+RACE_KEYWORDS = ("마라톤", "트레일", "울트라", "레이스")
+THEME_RUN_KEYWORDS = (
+    "포켓몬런",
+    "포켓몬 런",
+    "산리오런",
+    "산리오 런",
+    "컬러런",
+    "나이트런",
+    "좀비런",
+)
+NOISE_KEYWORDS = ("런칭", "브런치", "프런트", "런웨이")
+LEARNING_NOISE_KEYWORDS = (
+    "머신 러닝",
+    "머신러닝",
+    "딥 러닝",
+    "딥러닝",
+    "인공지능",
+    "chat gpt",
+    "챗 gpt",
+    "교육",
+    "강의",
+    "취업",
+    "캠프",
+)
 
 
 class OnOffMixParser(EventExtractPort):
     def extract(self, html: str) -> list[MarathonEvent]:
         soup = BeautifulSoup(html, "html.parser")
         events: list[MarathonEvent] = []
+        seen_links: set[str] = set()
 
         for article in soup.select("ul.event_lists li article.event_area"):
             link_tag = article.select_one(f"a[href^='{EVENT_LINK_PREFIX}']")
@@ -36,6 +60,9 @@ class OnOffMixParser(EventExtractPort):
             location = self._extract_location(article)
             event_date = self._extract_event_date(article)
             link_url = urljoin(ONOFFMIX_BASE_URL, href)
+            if link_url in seen_links:
+                continue
+            seen_links.add(link_url)
 
             events.append(
                 MarathonEvent(
@@ -72,7 +99,20 @@ class OnOffMixParser(EventExtractPort):
     @staticmethod
     def _is_marathon_related(title: str, tags_text: str) -> bool:
         haystack = f"{title} {tags_text}".lower()
-        return any(keyword in haystack for keyword in RACE_KEYWORDS)
+        if any(keyword in haystack for keyword in NOISE_KEYWORDS):
+            return False
+        if any(keyword in haystack for keyword in RACE_KEYWORDS):
+            return True
+        if any(keyword in haystack for keyword in THEME_RUN_KEYWORDS):
+            return True
+        if "런" in haystack or "러닝" in haystack:
+            if any(keyword in haystack for keyword in LEARNING_NOISE_KEYWORDS):
+                return False
+            return any(
+                keyword in haystack
+                for keyword in ("대회", "페스타", "페스티벌", "run", "레이스")
+            )
+        return False
 
     @staticmethod
     def _extract_date_text(article) -> str:

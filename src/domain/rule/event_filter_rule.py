@@ -9,9 +9,6 @@ def is_actionable_event(event: MarathonEvent, *, today_kst: date | None = None) 
     if today_kst is None:
         today_kst = datetime.now(KST).date()
 
-    if event.registration_end_date is not None and event.registration_end_date < today_kst:
-        return False
-
     if event.event_date is not None and event.event_date < today_kst:
         return False
 

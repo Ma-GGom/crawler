@@ -2,6 +2,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from adapter.outbound.persistence.entity.marathon_event_row import MarathonEventRow
 from domain.model.marathon_event import MarathonEvent
+from domain.rule.url_rule import normalize_url
 
 KST = timezone(timedelta(hours=9), name="KST")
 
@@ -10,7 +11,8 @@ class MarathonEventMapper:
     @staticmethod
     def to_row(event: MarathonEvent) -> MarathonEventRow:
         reg_start_at = event.registration_start_date or event.event_date
-        link_url = event.official_website_url or event.link_url
+        normalized_link = normalize_url(event.official_website_url or event.link_url)
+        link_url = normalized_link or event.official_website_url or event.link_url
 
         return MarathonEventRow(
             title=event.title.strip() or None,
@@ -69,4 +71,3 @@ class MarathonEventMapper:
         if reg_end is not None and today <= reg_end:
             return "OPEN"
         return "UPCOMING"
-

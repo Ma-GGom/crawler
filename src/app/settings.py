@@ -8,6 +8,8 @@ class CrawlerSettings:
     env: str
     database_url: str | None
     marathon_event_table: str
+    event_watch_table: str
+    event_watch_seed_table: str
     raw_data_table: str
     raw_done_retention_days: int | None
     raw_error_retention_days: int | None
@@ -32,6 +34,11 @@ def load_settings() -> CrawlerSettings:
 
     database_url = os.getenv("CRAWLER_DATABASE_URL") or os.getenv("DATABASE_URL")
     marathon_event_table = os.getenv("CRAWLER_MARATHON_EVENT_TABLE", "marathon_event")
+    event_watch_table = os.getenv("CRAWLER_EVENT_WATCH_TABLE", "marathon_event_watch")
+    event_watch_seed_table = os.getenv(
+        "CRAWLER_EVENT_WATCH_SEED_TABLE",
+        "marathon_event_watch_seed",
+    )
     raw_data_table = os.getenv("CRAWLER_RAW_DATA_TABLE", "raw_crawled_data")
     raw_done_retention_days = _parse_retention_days(
         os.getenv("CRAWLER_RAW_DONE_RETENTION_DAYS"),
@@ -47,6 +54,8 @@ def load_settings() -> CrawlerSettings:
         env=env_name,
         database_url=database_url,
         marathon_event_table=marathon_event_table,
+        event_watch_table=event_watch_table,
+        event_watch_seed_table=event_watch_seed_table,
         raw_data_table=raw_data_table,
         raw_done_retention_days=raw_done_retention_days,
         raw_error_retention_days=raw_error_retention_days,

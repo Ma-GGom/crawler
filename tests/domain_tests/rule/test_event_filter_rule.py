@@ -13,7 +13,7 @@ from domain.rule.event_filter_rule import is_actionable_event
 
 
 class EventFilterRuleTest(unittest.TestCase):
-    def test_closed_registration_is_not_actionable(self) -> None:
+    def test_closed_registration_future_event_is_actionable(self) -> None:
         event = MarathonEvent(
             date_text="3/20(금)",
             title="테스트",
@@ -22,7 +22,7 @@ class EventFilterRuleTest(unittest.TestCase):
             registration_end_date=date(2026, 2, 1),
             event_date=date(2026, 3, 20),
         )
-        self.assertFalse(is_actionable_event(event, today_kst=date(2026, 3, 10)))
+        self.assertTrue(is_actionable_event(event, today_kst=date(2026, 3, 10)))
 
     def test_past_event_is_not_actionable(self) -> None:
         event = MarathonEvent(

@@ -11,6 +11,7 @@ if str(SRC_DIR) not in sys.path:
 from port.outbound.event_detail_fetch_port import EventDetailFetchPort
 from port.outbound.event_extract_port import EventExtractPort
 from port.outbound.event_store_port import EventStorePort
+from port.outbound.event_watch_port import EventWatchPort
 from port.outbound.raw_data_store_port import RawDataStorePort
 from port.outbound.source_fetch_port import SourceFetchPort
 from application.service.crawl_source_service import CrawlSourceService
@@ -112,6 +113,24 @@ class FakeRawDataStore(RawDataStorePort):
         return 0
 
 
+class FakeEventWatchStore(EventWatchPort):
+    def __init__(self) -> None:
+        self.called = False
+        self.seed_count = 0
+
+    def save_seeds(self, seeds) -> int:
+        self.seed_count += len(seeds)
+        return len(seeds)
+
+    def refresh_watchlist(self, *, today_kst: date) -> dict[str, int]:
+        self.called = True
+        return {
+            "watch_total_count": 1,
+            "watch_pending_count": 1,
+            "watch_detected_count": 0,
+        }
+
+
 class CrawlSourceServiceTest(unittest.TestCase):
     def test_attach_source_metadata(self) -> None:
         fetched_at = datetime.now(KST)
@@ -180,7 +199,7 @@ class CrawlSourceServiceTest(unittest.TestCase):
 
         self.assertEqual("2026-12-31", events[0].event_date.isoformat())
 
-    def test_filter_out_when_registration_closed(self) -> None:
+    def test_keep_future_event_even_when_registration_closed(self) -> None:
         class ClosedDetailFetcher(EventDetailFetchPort):
             def fetch_detail(self, detail_url: str) -> MarathonEventDetail | None:
                 return MarathonEventDetail(
@@ -204,7 +223,7 @@ class CrawlSourceServiceTest(unittest.TestCase):
         )
 
         events = service.crawl()
-        self.assertEqual(0, len(events))
+        self.assertEqual(1, len(events))
 
     def test_reject_stale_payload(self) -> None:
         stale_payload = SourcePayload(
@@ -312,6 +331,62 @@ class CrawlSourceServiceTest(unittest.TestCase):
 
         self.assertEqual(1, len(events))
 
+    def test_deduplicate_by_canonical_official_url_and_choose_better_source(self) -> None:
+        now = datetime.now(KST)
+        source_one = SourceCrawler(
+            source_fetcher=FakeSourceFetcher(
+                SourcePayload(
+                    source_name="onoffmix.com",
+                    source_url="https://onoffmix.com/list",
+                    html="<a></a>",
+                    fetched_at_kst=now,
+                )
+            ),
+            event_extractor=FakeExtractor(
+                [
+                    MarathonEvent(
+                        date_text="12/31(수)",
+                        title="포털 대회명",
+                        location="서울",
+                        link_url="https://portal.example.com/race?id=10&utm_source=ads",
+                        official_website_url="https://race.example.com/apply?utm_campaign=x",
+                        event_date=date(2026, 12, 31),
+                    )
+                ]
+            ),
+        )
+        source_two = SourceCrawler(
+            source_fetcher=FakeSourceFetcher(
+                SourcePayload(
+                    source_name="seoul-marathon.com",
+                    source_url="https://seoul-marathon.com/90",
+                    html="<b></b>",
+                    fetched_at_kst=now - timedelta(seconds=1),
+                )
+            ),
+            event_extractor=FakeExtractor(
+                [
+                    MarathonEvent(
+                        date_text="2026-12-31",
+                        title="공식 대회명",
+                        location="서울",
+                        link_url="https://seoul-marathon.com/notice",
+                        official_website_url="https://race.example.com/apply/",
+                        registration_start_date=date(2026, 8, 1),
+                        registration_end_date=date(2026, 9, 1),
+                        event_date=date(2026, 12, 31),
+                    )
+                ]
+            ),
+        )
+
+        service = CrawlSourceService(source_crawlers=[source_one, source_two])
+        events = service.crawl()
+
+        self.assertEqual(1, len(events))
+        self.assertEqual("seoul-marathon.com", events[0].source_name)
+        self.assertEqual("공식 대회명", events[0].title)
+
     def test_store_events_with_event_store(self) -> None:
         fetched_at = datetime.now(KST)
         payload = SourcePayload(
@@ -333,6 +408,25 @@ class CrawlSourceServiceTest(unittest.TestCase):
         self.assertEqual(1, len(event_store.saved_batches))
         self.assertEqual(1, len(event_store.saved_batches[0]))
         self.assertEqual("테스트 대회", event_store.saved_batches[0][0].title)
+
+    def test_refresh_event_watch_after_crawl(self) -> None:
+        payload = SourcePayload(
+            source_name="test-source",
+            source_url="https://example.com/list",
+            html="<table></table>",
+            fetched_at_kst=datetime.now(KST),
+        )
+        watch_store = FakeEventWatchStore()
+        service = CrawlSourceService(
+            source_fetcher=FakeSourceFetcher(payload),
+            event_extractor=FakeExtractor(),
+            event_watch_store=watch_store,
+        )
+
+        service.crawl()
+
+        self.assertTrue(watch_store.called)
+        self.assertTrue(watch_store.seed_count > 0)
 
     def test_store_raw_payload_done_status(self) -> None:
         fetched_at = datetime.now(KST)

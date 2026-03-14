@@ -20,7 +20,7 @@ def main() -> int:
     settings = load_settings()
     configure_logging(settings.log_level)
     logger = logging.getLogger(__name__)
-    logger.info("crawler_started", extra={"env": settings.env})
+    logger.info("크롤러 실행 시작", extra={"env": settings.env})
 
     try:
         from app.app import create_crawler_app
@@ -28,16 +28,15 @@ def main() -> int:
         runner = create_crawler_app()
         events = runner.run_once()
     except ModuleNotFoundError as exc:
-        logger.exception("dependency_missing", extra={"error": str(exc)})
+        logger.exception("필수 의존성 누락", extra={"error": str(exc)})
         return 1
     except Exception as exc:
-        logger.exception("crawler_failed", extra={"error": str(exc)})
+        logger.exception("크롤러 실행 실패", extra={"error": str(exc)})
         return 1
 
-    logger.info("crawler_finished", extra={"event_count": len(events)})
+    logger.info("크롤러 실행 완료", extra={"event_count": len(events)})
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
