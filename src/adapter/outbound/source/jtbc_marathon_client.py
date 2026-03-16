@@ -5,8 +5,6 @@ import requests
 from port.outbound.source_fetch_port import SourceFetchPort
 from domain.model.source_payload import SourcePayload
 
-SOURCE_URL = "https://marathon.jtbc.com/"
-SOURCE_NAME = "marathon.jtbc.com"
 DEFAULT_TIMEOUT_SECONDS = 10
 KST = timezone(timedelta(hours=9), name="KST")
 DEFAULT_USER_AGENT = (
@@ -19,8 +17,8 @@ DEFAULT_USER_AGENT = (
 class JtbcMarathonClient(SourceFetchPort):
     def __init__(
         self,
-        source_url: str = SOURCE_URL,
-        source_name: str = SOURCE_NAME,
+        source_url: str,
+        source_name: str,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         user_agent: str = DEFAULT_USER_AGENT,
     ) -> None:
@@ -50,4 +48,3 @@ class JtbcMarathonClient(SourceFetchPort):
             html=response.text,
             fetched_at_kst=fetched_at_kst,
         )
-

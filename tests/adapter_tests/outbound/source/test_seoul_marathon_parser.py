@@ -19,7 +19,7 @@ class SeoulMarathonParserTest(unittest.TestCase):
           \uc9d1\uacb0\uc7a5\uc18c \ud480\ucf54\uc2a4: \uad11\ud654\ubb38 \uad11\uc7a5 10km: \uc7a0\uc2e4\uc885\ud569\uc6b4\ub3d9\uc7a5
         </div>
         """
-        parser = SeoulMarathonParser()
+        parser = SeoulMarathonParser(detail_url="https://seoul-marathon.com/90")
 
         events = parser.extract(html)
 
@@ -35,4 +35,3 @@ class SeoulMarathonParserTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -33,7 +33,9 @@ class ChuncheonNoticeParserTest(unittest.TestCase):
           </tr>
         </table>
         """
-        parser = ChuncheonNoticeParser()
+        parser = ChuncheonNoticeParser(
+            list_url="https://board.chosun.com/nbrd/bbs/list.html?b_bbs_id=10005&branch=&pn=1"
+        )
 
         events = parser.extract(html)
 

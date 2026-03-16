@@ -6,7 +6,6 @@ from bs4 import BeautifulSoup
 from port.outbound.event_extract_port import EventExtractPort
 from domain.model.marathon_event import MarathonEvent
 
-DETAIL_URL = "https://seoul-marathon.com/90"
 LOCATION_FALLBACK = "\uc11c\uc6b8"
 WHITESPACE_PATTERN = re.compile(r"\s+")
 TITLE_PATTERN = re.compile(r"\ub300\ud68c\uba85\s*(.+?)\s*\ub300\ud68c\uc77c")
@@ -19,6 +18,9 @@ LOCATION_PATTERN = re.compile(
 
 
 class SeoulMarathonParser(EventExtractPort):
+    def __init__(self, detail_url: str) -> None:
+        self._detail_url = detail_url
+
     def extract(self, html: str) -> list[MarathonEvent]:
         text = self._extract_normalized_text(html)
         title = self._extract_title(text)
@@ -32,7 +34,7 @@ class SeoulMarathonParser(EventExtractPort):
                 date_text=event_date.isoformat(),
                 title=title,
                 location=location,
-                link_url=DETAIL_URL,
+                link_url=self._detail_url,
                 event_date=event_date,
             )
         ]
@@ -72,4 +74,3 @@ class SeoulMarathonParser(EventExtractPort):
             return None
         location = matched.group(1).strip()
         return location or None
-

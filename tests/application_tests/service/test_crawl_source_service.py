@@ -14,10 +14,12 @@ from port.outbound.event_store_port import EventStorePort
 from port.outbound.event_watch_port import EventWatchPort
 from port.outbound.raw_data_store_port import RawDataStorePort
 from port.outbound.source_fetch_port import SourceFetchPort
+from port.outbound.source_registry_port import SourceRegistryPort
 from application.service.crawl_source_service import CrawlSourceService
 from application.service.source_crawler import SourceCrawler
 from domain.model.event_detail import MarathonEventDetail
 from domain.model.marathon_event import MarathonEvent
+from domain.model.source_registry import SourceCrawlResult, SourceRegistrySeed
 from domain.model.source_payload import SourcePayload
 
 KST = timezone(timedelta(hours=9), name="KST")
@@ -129,6 +131,19 @@ class FakeEventWatchStore(EventWatchPort):
             "watch_pending_count": 1,
             "watch_detected_count": 0,
         }
+
+
+class FakeSourceRegistryStore(SourceRegistryPort):
+    def __init__(self) -> None:
+        self.upserted_sources: list[SourceRegistrySeed] = []
+        self.results: list[SourceCrawlResult] = []
+
+    def upsert_sources(self, sources: list[SourceRegistrySeed]) -> int:
+        self.upserted_sources.extend(sources)
+        return len(sources)
+
+    def record_crawl_result(self, result: SourceCrawlResult) -> None:
+        self.results.append(result)
 
 
 class CrawlSourceServiceTest(unittest.TestCase):
@@ -492,6 +507,45 @@ class CrawlSourceServiceTest(unittest.TestCase):
         self.assertEqual(30, raw_store.pruned_records[0]["older_than_days"])
         self.assertEqual("ERROR", raw_store.pruned_records[1]["parsed_status"])
         self.assertEqual(90, raw_store.pruned_records[1]["older_than_days"])
+
+    def test_record_source_registry_result_after_crawl(self) -> None:
+        payload = SourcePayload(
+            source_name="test-source",
+            source_url="https://example.com/list",
+            html="<table></table>",
+            fetched_at_kst=datetime.now(KST),
+        )
+        registry_store = FakeSourceRegistryStore()
+        service = CrawlSourceService(
+            source_fetcher=FakeSourceFetcher(payload),
+            event_extractor=FakeExtractor(
+                [
+                    MarathonEvent(
+                        date_text="2026-10-01",
+                        title="2026 KB 스타 런",
+                        location="서울",
+                        link_url="https://example.com/race",
+                        event_date=date(2026, 10, 1),
+                    )
+                ]
+            ),
+            source_registry_store=registry_store,
+            source_registry_seeds=[
+                SourceRegistrySeed(
+                    source_name="test-source",
+                    source_url="https://example.com/list",
+                    source_kind="OFFICIAL",
+                )
+            ],
+        )
+
+        service.crawl()
+
+        self.assertEqual(1, len(registry_store.upserted_sources))
+        self.assertEqual(1, len(registry_store.results))
+        self.assertTrue(registry_store.results[0].success)
+        self.assertEqual(1, registry_store.results[0].event_count)
+        self.assertGreater(registry_store.results[0].rare_event_count, 0)
 
 
 if __name__ == "__main__":

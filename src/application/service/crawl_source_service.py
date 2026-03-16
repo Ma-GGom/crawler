@@ -1,3 +1,4 @@
+from collections import Counter
 from dataclasses import replace
 import logging
 from datetime import datetime, timedelta, timezone
@@ -10,27 +11,19 @@ from port.outbound.event_store_port import EventStorePort
 from port.outbound.event_watch_port import EventWatchPort
 from port.outbound.raw_data_store_port import RawDataStorePort
 from port.outbound.source_fetch_port import SourceFetchPort
+from port.outbound.source_registry_port import SourceRegistryPort
 from application.service.source_crawler import SourceCrawler
 from domain.model.marathon_event import MarathonEvent
 from domain.model.recurrence_watch import RecurrenceWatchSeed
+from domain.model.source_registry import SourceCrawlResult, SourceRegistrySeed
 from domain.rule.event_date_rule import infer_event_date_from_list_text
 from domain.rule.event_filter_rule import is_actionable_event
 from domain.rule.freshness_rule import is_fresh_payload
+from domain.rule.rare_marathon_rule import match_rare_marathon_keywords
 from domain.rule.url_rule import normalize_url
 
 logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9), name="KST")
-SOURCE_PRIORITY = {
-    "seoul-marathon.com": 500,
-    "marathon.jtbc.com": 500,
-    "runnext.org": 350,
-    "run1080.com": 340,
-    "pokemon-run-tworld": 420,
-    "marathon.pe.kr": 250,
-    "onoffmix.com": 200,
-    "chuncheonmarathon-board": 400,
-}
-WATCH_SEED_EXCLUDED_SOURCES = {"chuncheonmarathon-board"}
 
 
 class CrawlSourceService(CrawlSourceUseCase):
@@ -41,6 +34,10 @@ class CrawlSourceService(CrawlSourceUseCase):
         detail_fetcher: EventDetailFetchPort | None = None,
         event_store: EventStorePort | None = None,
         event_watch_store: EventWatchPort | None = None,
+        source_registry_store: SourceRegistryPort | None = None,
+        source_registry_seeds: list[SourceRegistrySeed] | None = None,
+        source_priority: dict[str, int] | None = None,
+        watch_seed_excluded_sources: set[str] | None = None,
         raw_data_store: RawDataStorePort | None = None,
         raw_done_retention_days: int | None = None,
         raw_error_retention_days: int | None = None,
@@ -66,11 +63,16 @@ class CrawlSourceService(CrawlSourceUseCase):
 
         self._event_store = event_store
         self._event_watch_store = event_watch_store
+        self._source_registry_store = source_registry_store
+        self._source_registry_seeds = source_registry_seeds or []
+        self._source_priority = source_priority or {}
+        self._watch_seed_excluded_sources = watch_seed_excluded_sources or set()
         self._raw_data_store = raw_data_store
         self._raw_done_retention_days = raw_done_retention_days
         self._raw_error_retention_days = raw_error_retention_days
 
     def crawl(self) -> list[MarathonEvent]:
+        self._upsert_source_registry_seeds()
         logger.info(
             "크롤링 시작",
             extra={"source_count": len(self._source_crawlers)},
@@ -107,6 +109,50 @@ class CrawlSourceService(CrawlSourceUseCase):
         )
 
         return merged_events
+
+    def _upsert_source_registry_seeds(self) -> None:
+        if self._source_registry_store is None or not self._source_registry_seeds:
+            return
+
+        try:
+            upserted_count = self._source_registry_store.upsert_sources(
+                self._source_registry_seeds
+            )
+            logger.info(
+                "소스 레지스트리 갱신 완료",
+                extra={"source_registry_count": upserted_count},
+            )
+        except Exception:
+            logger.exception("소스 레지스트리 갱신 실패")
+
+    def _record_source_crawl_result(
+        self,
+        *,
+        source_name: str,
+        source_url: str | None,
+        crawled_at_kst: datetime,
+        success: bool,
+        event_count: int,
+        rare_event_count: int,
+        error_message: str | None = None,
+    ) -> None:
+        if self._source_registry_store is None:
+            return
+
+        try:
+            self._source_registry_store.record_crawl_result(
+                SourceCrawlResult(
+                    source_name=source_name,
+                    source_url=source_url,
+                    crawled_at_kst=crawled_at_kst,
+                    success=success,
+                    event_count=event_count,
+                    rare_event_count=rare_event_count,
+                    error_message=error_message,
+                )
+            )
+        except Exception:
+            logger.exception("소스 레지스트리 실행결과 기록 실패")
 
     def _refresh_event_watch(self) -> None:
         if self._event_watch_store is None:
@@ -150,6 +196,7 @@ class CrawlSourceService(CrawlSourceUseCase):
             events = crawler.event_extractor.extract(payload.html)
             enriched_events: list[MarathonEvent] = []
             watch_seeds: list[RecurrenceWatchSeed] = []
+            rare_keyword_counter: Counter[str] = Counter()
             today_kst = datetime.now(KST).date()
             for event in events:
                 enriched = replace(
@@ -190,7 +237,7 @@ class CrawlSourceService(CrawlSourceUseCase):
 
                 if enriched.event_date is not None:
                     if (
-                        enriched.source_name not in WATCH_SEED_EXCLUDED_SOURCES
+                        enriched.source_name not in self._watch_seed_excluded_sources
                         and enriched.event_date.year in (today_kst.year - 1, today_kst.year)
                     ):
                         watch_seeds.append(
@@ -205,13 +252,37 @@ class CrawlSourceService(CrawlSourceUseCase):
                 if not is_actionable_event(enriched):
                     continue
 
+                for keyword in match_rare_marathon_keywords(enriched.title):
+                    rare_keyword_counter[keyword] += 1
                 enriched_events.append(enriched)
 
             self._save_watch_seeds(watch_seeds)
+            rare_event_count = sum(rare_keyword_counter.values())
+            if rare_event_count > 0:
+                logger.info(
+                    "희귀 대회 키워드 감지",
+                    extra={
+                        "source": source_label,
+                        "rare_event_count": rare_event_count,
+                        "rare_keywords": sorted(rare_keyword_counter.keys()),
+                    },
+                )
             self._save_raw(
                 source=source_label,
-                payload=self._build_done_raw_payload(payload, enriched_events),
+                payload=self._build_done_raw_payload(
+                    payload,
+                    enriched_events,
+                    rare_keyword_counter=rare_keyword_counter,
+                ),
                 parsed_status="DONE",
+            )
+            self._record_source_crawl_result(
+                source_name=payload.source_name,
+                source_url=payload.source_url,
+                crawled_at_kst=payload.fetched_at_kst,
+                success=True,
+                event_count=len(enriched_events),
+                rare_event_count=rare_event_count,
             )
             logger.info(
                 "소스 크롤링 완료",
@@ -227,6 +298,19 @@ class CrawlSourceService(CrawlSourceUseCase):
             logger.exception(
                 "소스 크롤링 실패",
                 extra={"source": source_label},
+            )
+            self._record_source_crawl_result(
+                source_name=source_label,
+                source_url=payload.source_url if payload is not None else None,
+                crawled_at_kst=(
+                    payload.fetched_at_kst
+                    if payload is not None
+                    else datetime.now(KST)
+                ),
+                success=False,
+                event_count=0,
+                rare_event_count=0,
+                error_message=str(exc),
             )
             raise
 
@@ -246,10 +330,9 @@ class CrawlSourceService(CrawlSourceUseCase):
         composite = f"{title_key}|{event_date_key}|{location_key}"
         return "composite", composite
 
-    @staticmethod
-    def _is_better_event(candidate: MarathonEvent, existing: MarathonEvent) -> bool:
-        candidate_score = CrawlSourceService._event_quality_score(candidate)
-        existing_score = CrawlSourceService._event_quality_score(existing)
+    def _is_better_event(self, candidate: MarathonEvent, existing: MarathonEvent) -> bool:
+        candidate_score = self._event_quality_score(candidate)
+        existing_score = self._event_quality_score(existing)
         if candidate_score != existing_score:
             return candidate_score > existing_score
 
@@ -257,9 +340,8 @@ class CrawlSourceService(CrawlSourceUseCase):
         existing_time = CrawlSourceService._safe_event_time(existing.crawled_at_kst)
         return candidate_time > existing_time
 
-    @staticmethod
-    def _event_quality_score(event: MarathonEvent) -> int:
-        score = SOURCE_PRIORITY.get(event.source_name, 0)
+    def _event_quality_score(self, event: MarathonEvent) -> int:
+        score = self._source_priority.get(event.source_name, 0)
         if event.event_date is not None:
             score += 30
         if event.registration_start_date is not None:
@@ -325,12 +407,17 @@ class CrawlSourceService(CrawlSourceUseCase):
 
     @staticmethod
     def _build_done_raw_payload(
-        payload, events: list[MarathonEvent]
+        payload,
+        events: list[MarathonEvent],
+        *,
+        rare_keyword_counter: Counter[str],
     ) -> dict[str, object]:
         return {
             "source_url": payload.source_url,
             "fetched_at_kst": payload.fetched_at_kst.isoformat(),
             "event_count": len(events),
+            "rare_event_count": sum(rare_keyword_counter.values()),
+            "rare_keywords": sorted(rare_keyword_counter.keys()),
             "html": payload.html,
         }
 

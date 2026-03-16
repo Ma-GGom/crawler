@@ -10,10 +10,10 @@ class MarathonEventRow:
     distances: list[str]
     reg_start_date: datetime | None
     reg_end_date: datetime | None
+    event_scale: str
     is_major: bool
     link_url: str | None
     status: str
     source_name: str | None
     source_url: str | None
     crawled_at_kst: datetime | None
-

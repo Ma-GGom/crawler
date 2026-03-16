@@ -110,7 +110,7 @@ class OnOffMixParserTest(unittest.TestCase):
           </li>
         </ul>
         """
-        parser = OnOffMixParser()
+        parser = OnOffMixParser(base_url="https://www.onoffmix.com")
 
         events = parser.extract(html)
 

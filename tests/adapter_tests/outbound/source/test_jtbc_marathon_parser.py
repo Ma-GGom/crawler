@@ -19,7 +19,7 @@ class JtbcMarathonParserTest(unittest.TestCase):
           PLACE \uc0c1\uc554\uc6d4\ub4dc\ucef5\uacbd\uae30\uc7a5
         </div>
         """
-        parser = JtbcMarathonParser()
+        parser = JtbcMarathonParser(official_url="https://marathon.jtbc.com/")
 
         events = parser.extract(html)
 
@@ -32,4 +32,3 @@ class JtbcMarathonParserTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

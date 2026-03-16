@@ -29,7 +29,7 @@ class MarathonPeParserTest(unittest.TestCase):
           </tr>
         </table>
         """
-        parser = MarathonPeParser()
+        parser = MarathonPeParser(detail_base_url="http://www.roadrun.co.kr/schedule/")
 
         events = parser.extract(html)
 
@@ -54,7 +54,7 @@ class MarathonPeParserTest(unittest.TestCase):
           </tr>
         </table>
         """
-        parser = MarathonPeParser()
+        parser = MarathonPeParser(detail_base_url="http://www.roadrun.co.kr/schedule/")
 
         events = parser.extract(html)
 

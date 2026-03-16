@@ -9,11 +9,13 @@ CATEGORY_KEYS = (
     "openingSoonList",
     "openForRegistrationList",
 )
-SOURCE_FALLBACK_URL = "https://www.runnext.org/"
 LOCATION_FALLBACK = "\uc7a5\uc18c \ubbf8\uc815"
 
 
 class RunNextParser(EventExtractPort):
+    def __init__(self, fallback_url: str) -> None:
+        self._fallback_url = fallback_url
+
     def extract(self, html: str) -> list[MarathonEvent]:
         try:
             payload = json.loads(html)
@@ -52,8 +54,7 @@ class RunNextParser(EventExtractPort):
         marathon_id = marathon_id.strip()
         return marathon_id or None
 
-    @staticmethod
-    def _to_event(item: dict[str, object]) -> MarathonEvent | None:
+    def _to_event(self, item: dict[str, object]) -> MarathonEvent | None:
         title = RunNextParser._extract_text(item.get("name"))
         if title is None:
             return None
@@ -67,7 +68,7 @@ class RunNextParser(EventExtractPort):
             or RunNextParser._extract_text(item.get("region"))
             or LOCATION_FALLBACK
         )
-        link_url = RunNextParser._extract_text(item.get("website")) or SOURCE_FALLBACK_URL
+        link_url = RunNextParser._extract_text(item.get("website")) or self._fallback_url
         reg_start = RunNextParser._parse_iso_date(item.get("registrationStart"))
         reg_end = RunNextParser._parse_iso_date(item.get("registrationEnd"))
 

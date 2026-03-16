@@ -6,8 +6,6 @@ import requests
 from domain.model.source_payload import SourcePayload
 from port.outbound.source_fetch_port import SourceFetchPort
 
-SOURCE_URL = "https://www.onoffmix.com/event"
-SOURCE_NAME = "onoffmix.com"
 SEARCH_TERMS = ("마라톤", "러닝", "트레일런")
 DEFAULT_TIMEOUT_SECONDS = 10
 KST = timezone(timedelta(hours=9), name="KST")
@@ -21,9 +19,9 @@ DEFAULT_USER_AGENT = (
 class OnOffMixClient(SourceFetchPort):
     def __init__(
         self,
-        source_url: str = SOURCE_URL,
+        source_url: str,
+        source_name: str,
         search_terms: tuple[str, ...] = SEARCH_TERMS,
-        source_name: str = SOURCE_NAME,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         user_agent: str = DEFAULT_USER_AGENT,
     ) -> None:

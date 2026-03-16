@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 from port.outbound.event_extract_port import EventExtractPort
 from domain.model.marathon_event import MarathonEvent
 
-ONOFFMIX_BASE_URL = "https://www.onoffmix.com"
 EVENT_LINK_PREFIX = "/event/"
 DATE_PATTERN = re.compile(r"(20\d{2})\.(\d{1,2})\.(\d{1,2})")
 RACE_KEYWORDS = ("마라톤", "트레일", "울트라", "레이스")
@@ -37,6 +36,9 @@ LEARNING_NOISE_KEYWORDS = (
 
 
 class OnOffMixParser(EventExtractPort):
+    def __init__(self, base_url: str) -> None:
+        self._base_url = base_url
+
     def extract(self, html: str) -> list[MarathonEvent]:
         soup = BeautifulSoup(html, "html.parser")
         events: list[MarathonEvent] = []
@@ -59,7 +61,7 @@ class OnOffMixParser(EventExtractPort):
             date_text = self._extract_date_text(article)
             location = self._extract_location(article)
             event_date = self._extract_event_date(article)
-            link_url = urljoin(ONOFFMIX_BASE_URL, href)
+            link_url = urljoin(self._base_url, href)
             if link_url in seen_links:
                 continue
             seen_links.add(link_url)

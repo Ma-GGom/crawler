@@ -34,7 +34,10 @@ class Run1080ParserTest(unittest.TestCase):
           </a>
         </div>
         """
-        parser = Run1080Parser()
+        parser = Run1080Parser(
+            mini_url_template="http://www.run1080.com/new/mini/index.php?code={code}",
+            event_url_template="https://mara1080.com/event/{event_id}",
+        )
 
         events = parser.extract(html)
 

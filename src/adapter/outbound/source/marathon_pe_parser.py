@@ -12,11 +12,13 @@ from domain.rule.event_row_rule import (
 )
 
 FALLBACK_LINK_TEXT = "링크 없음"
-ROADRUN_BASE_URL = "http://www.roadrun.co.kr/schedule/"
 JS_VIEW_PATH_PATTERN = re.compile(r"'(view\.php\?no=\d+)'")
 
 
 class MarathonPeParser(EventExtractPort):
+    def __init__(self, detail_base_url: str) -> None:
+        self._detail_base_url = detail_base_url
+
     def extract(self, html: str) -> list[MarathonEvent]:
         soup = BeautifulSoup(html, "html.parser")
         events: list[MarathonEvent] = []
@@ -60,8 +62,8 @@ class MarathonPeParser(EventExtractPort):
         if href.startswith("javascript:"):
             matched = JS_VIEW_PATH_PATTERN.search(href)
             if matched:
-                return urljoin(ROADRUN_BASE_URL, matched.group(1))
+                return urljoin(self._detail_base_url, matched.group(1))
             return FALLBACK_LINK_TEXT
 
-        return urljoin(ROADRUN_BASE_URL, href)
+        return urljoin(self._detail_base_url, href)
 

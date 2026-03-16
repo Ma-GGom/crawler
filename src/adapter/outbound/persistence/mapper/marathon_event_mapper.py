@@ -2,6 +2,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from adapter.outbound.persistence.entity.marathon_event_row import MarathonEventRow
 from domain.model.marathon_event import MarathonEvent
+from domain.rule.event_scale_rule import classify_event_scale, is_major_scale
 from domain.rule.url_rule import normalize_url
 
 KST = timezone(timedelta(hours=9), name="KST")
@@ -13,6 +14,7 @@ class MarathonEventMapper:
         reg_start_at = event.registration_start_date or event.event_date
         normalized_link = normalize_url(event.official_website_url or event.link_url)
         link_url = normalized_link or event.official_website_url or event.link_url
+        event_scale = classify_event_scale(event)
 
         return MarathonEventRow(
             title=event.title.strip() or None,
@@ -21,7 +23,8 @@ class MarathonEventMapper:
             distances=MarathonEventMapper._extract_distances(event.title),
             reg_start_date=MarathonEventMapper._to_kst_datetime(reg_start_at),
             reg_end_date=MarathonEventMapper._to_kst_datetime(event.registration_end_date),
-            is_major=False,
+            event_scale=event_scale,
+            is_major=is_major_scale(event_scale),
             link_url=link_url,
             status=MarathonEventMapper._derive_status(event),
             source_name=event.source_name or None,

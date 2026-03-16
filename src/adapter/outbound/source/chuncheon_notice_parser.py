@@ -6,7 +6,6 @@ from bs4 import BeautifulSoup
 from port.outbound.event_extract_port import EventExtractPort
 from domain.model.marathon_event import MarathonEvent
 
-LIST_URL = "https://board.chosun.com/nbrd/bbs/list.html?b_bbs_id=10005&branch=&pn=1"
 DATE_PATTERN = re.compile(r"^20\d{2}\.\d{1,2}\.\d{1,2}$")
 TARGET_KEYWORDS = ("접수", "참가", "신청", "일정")
 LOCATION = "춘천"
@@ -14,6 +13,9 @@ MAX_NOTICE_EVENTS = 5
 
 
 class ChuncheonNoticeParser(EventExtractPort):
+    def __init__(self, list_url: str) -> None:
+        self._list_url = list_url
+
     def extract(self, html: str) -> list[MarathonEvent]:
         soup = BeautifulSoup(html, "html.parser")
         events: list[MarathonEvent] = []
@@ -35,7 +37,7 @@ class ChuncheonNoticeParser(EventExtractPort):
             if link is None:
                 continue
 
-            detail_url = urljoin(LIST_URL, link.get("href", "").strip())
+            detail_url = urljoin(self._list_url, link.get("href", "").strip())
             if not detail_url:
                 continue
 

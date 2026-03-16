@@ -57,7 +57,7 @@ class RunNextParserTest(unittest.TestCase):
           }
         }
         """
-        parser = RunNextParser()
+        parser = RunNextParser(fallback_url="https://www.runnext.org/")
 
         events = parser.extract(html)
 

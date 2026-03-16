@@ -48,6 +48,10 @@ LOCATION_FALLBACK = "전국"
 
 
 class Run1080Parser(EventExtractPort):
+    def __init__(self, mini_url_template: str, event_url_template: str) -> None:
+        self._mini_url_template = mini_url_template
+        self._event_url_template = event_url_template
+
     def extract(self, html: str) -> list[MarathonEvent]:
         soup = BeautifulSoup(html, "html.parser")
         events: list[MarathonEvent] = []
@@ -77,8 +81,7 @@ class Run1080Parser(EventExtractPort):
 
         return events
 
-    @staticmethod
-    def _normalize_mara1080_link(raw_href: str) -> str | None:
+    def _normalize_mara1080_link(self, raw_href: str) -> str | None:
         href = raw_href.strip()
         if not href:
             return None
@@ -86,14 +89,14 @@ class Run1080Parser(EventExtractPort):
         mini_open_matched = MINI_OPEN_PATTERN.search(href)
         if mini_open_matched is not None:
             code = mini_open_matched.group(1)
-            return f"http://www.run1080.com/new/mini/index.php?code={code}"
+            return self._mini_url_template.format(code=code)
 
         matched = MARA1080_EVENT_PATTERN.search(href)
         if matched is None:
             return None
 
         event_id = matched.group(1).lower()
-        return f"https://mara1080.com/event/{event_id}"
+        return self._event_url_template.format(event_id=event_id)
 
     @staticmethod
     def _is_target_title(title: str) -> bool:

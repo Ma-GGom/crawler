@@ -19,7 +19,10 @@ class PokemonRunTworldParserTest(unittest.TestCase):
           <p>예매 기간 2026년 3월 3일(화) 9시~3월 13일(금) 18시</p>
         </div>
         """
-        parser = PokemonRunTworldParser()
+        parser = PokemonRunTworldParser(
+            link_url="https://shop.tworld.co.kr/exhibition/view?exhibitionId=P00000498",
+            official_website_url="https://pokemonkorea.co.kr/PokemonRUN2026/menu715",
+        )
 
         events = parser.extract(html)
 

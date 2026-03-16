@@ -16,6 +16,9 @@ PLACE_PATTERN = re.compile(r"PLACE\s*([^\s]+)")
 
 
 class JtbcMarathonParser(EventExtractPort):
+    def __init__(self, official_url: str) -> None:
+        self._official_url = official_url
+
     def extract(self, html: str) -> list[MarathonEvent]:
         text = self._extract_normalized_text(html)
         title = self._extract_title(text)
@@ -29,8 +32,8 @@ class JtbcMarathonParser(EventExtractPort):
                 date_text=event_date.isoformat(),
                 title=title,
                 location=location,
-                link_url="https://marathon.jtbc.com/",
-                official_website_url="https://marathon.jtbc.com/",
+                link_url=self._official_url,
+                official_website_url=self._official_url,
                 event_date=event_date,
             )
         ]
@@ -70,4 +73,3 @@ class JtbcMarathonParser(EventExtractPort):
             return None
         location = matched.group(1).strip()
         return location or None
-

@@ -5,8 +5,6 @@ import requests
 from domain.model.source_payload import SourcePayload
 from port.outbound.source_fetch_port import SourceFetchPort
 
-SOURCE_URL = "https://shop.tworld.co.kr/exhibition/view?exhibitionId=P00000498"
-SOURCE_NAME = "pokemon-run-tworld"
 DEFAULT_TIMEOUT_SECONDS = 10
 KST = timezone(timedelta(hours=9), name="KST")
 DEFAULT_USER_AGENT = (
@@ -19,8 +17,8 @@ DEFAULT_USER_AGENT = (
 class PokemonRunTworldClient(SourceFetchPort):
     def __init__(
         self,
-        source_url: str = SOURCE_URL,
-        source_name: str = SOURCE_NAME,
+        source_url: str,
+        source_name: str,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         user_agent: str = DEFAULT_USER_AGENT,
     ) -> None:

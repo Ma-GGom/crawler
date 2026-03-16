@@ -7,10 +7,8 @@ from bs4 import BeautifulSoup
 from port.outbound.source_fetch_port import SourceFetchPort
 from domain.model.source_payload import SourcePayload
 
-SOURCE_URL = "http://www.marathon.pe.kr/schedule_index.html"
 DEFAULT_TIMEOUT_SECONDS = 10
 DEFAULT_ENCODING = "euc-kr"
-SOURCE_NAME = "marathon.pe.kr"
 KST = timezone(timedelta(hours=9), name="KST")
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -22,8 +20,8 @@ DEFAULT_USER_AGENT = (
 class MarathonPeClient(SourceFetchPort):
     def __init__(
         self,
-        source_url: str = SOURCE_URL,
-        source_name: str = SOURCE_NAME,
+        source_url: str,
+        source_name: str,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         user_agent: str = DEFAULT_USER_AGENT,
     ) -> None:

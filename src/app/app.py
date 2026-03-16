@@ -27,9 +27,11 @@ from adapter.outbound.source.seoul_marathon_parser import SeoulMarathonParser
 from application.service.crawl_source_service import CrawlSourceService
 from application.service.source_crawler import SourceCrawler
 from app.settings import CrawlerSettings, load_settings
+from domain.model.source_registry import SourceRegistrySeed
 from port.outbound.event_watch_port import EventWatchPort
 from port.outbound.event_store_port import EventStorePort
 from port.outbound.raw_data_store_port import RawDataStorePort
+from port.outbound.source_registry_port import SourceRegistryPort
 
 
 def _create_event_store(settings: CrawlerSettings) -> EventStorePort | None:
@@ -78,44 +80,148 @@ def _create_event_watch_store(settings: CrawlerSettings) -> EventWatchPort | Non
     )
 
 
+def _create_source_registry_store(
+    settings: CrawlerSettings,
+) -> SourceRegistryPort | None:
+    database_url = settings.database_url
+    if not database_url:
+        return None
+
+    from adapter.outbound.persistence.postgres_source_registry_repository import (
+        PostgresSourceRegistryRepository,
+    )
+
+    return PostgresSourceRegistryRepository(
+        dsn=database_url,
+        table_name=settings.source_registry_table,
+    )
+
+
+def _build_source_registry_seeds(settings: CrawlerSettings) -> list[SourceRegistrySeed]:
+    return [
+        SourceRegistrySeed(
+            source_name=settings.marathon_pe_source.source_name,
+            source_url=settings.marathon_pe_source.source_url,
+            source_kind="PLATFORM",
+        ),
+        SourceRegistrySeed(
+            source_name=settings.onoffmix_source.source_name,
+            source_url=settings.onoffmix_source.source_url,
+            source_kind="PLATFORM",
+        ),
+        SourceRegistrySeed(
+            source_name=settings.chuncheon_notice_source.source_name,
+            source_url=settings.chuncheon_notice_source.source_url,
+            source_kind="BOARD",
+        ),
+        SourceRegistrySeed(
+            source_name=settings.runnext_source.source_name,
+            source_url=settings.runnext_source.source_url,
+            source_kind="PLATFORM",
+        ),
+        SourceRegistrySeed(
+            source_name=settings.run1080_source.source_name,
+            source_url=settings.run1080_source.source_url,
+            source_kind="PLATFORM",
+        ),
+        SourceRegistrySeed(
+            source_name=settings.pokemon_run_source.source_name,
+            source_url=settings.pokemon_run_source.source_url,
+            source_kind="OFFICIAL",
+        ),
+        SourceRegistrySeed(
+            source_name=settings.jtbc_source.source_name,
+            source_url=settings.jtbc_source.source_url,
+            source_kind="OFFICIAL",
+        ),
+        SourceRegistrySeed(
+            source_name=settings.seoul_marathon_source.source_name,
+            source_url=settings.seoul_marathon_source.source_url,
+            source_kind="OFFICIAL",
+        ),
+    ]
+
+
 def create_crawler_app() -> CronRunner:
     settings = load_settings()
     source_crawlers = [
         SourceCrawler(
-            source_fetcher=MarathonPeClient(),
-            event_extractor=MarathonPeParser(),
+            source_fetcher=MarathonPeClient(
+                source_url=settings.marathon_pe_source.source_url,
+                source_name=settings.marathon_pe_source.source_name,
+            ),
+            event_extractor=MarathonPeParser(
+                detail_base_url=settings.marathon_pe_detail_base_url,
+            ),
             detail_fetcher=MarathonPeDetailClient(),
         ),
         SourceCrawler(
-            source_fetcher=OnOffMixClient(),
-            event_extractor=OnOffMixParser(),
+            source_fetcher=OnOffMixClient(
+                source_url=settings.onoffmix_source.source_url,
+                source_name=settings.onoffmix_source.source_name,
+            ),
+            event_extractor=OnOffMixParser(
+                base_url=settings.onoffmix_base_url,
+            ),
             detail_fetcher=OnOffMixDetailClient(),
         ),
         SourceCrawler(
-            source_fetcher=ChuncheonNoticeClient(),
-            event_extractor=ChuncheonNoticeParser(),
+            source_fetcher=ChuncheonNoticeClient(
+                source_url=settings.chuncheon_notice_source.source_url,
+                source_name=settings.chuncheon_notice_source.source_name,
+            ),
+            event_extractor=ChuncheonNoticeParser(
+                list_url=settings.chuncheon_notice_source.source_url,
+            ),
             detail_fetcher=ChuncheonNoticeDetailClient(),
         ),
         SourceCrawler(
-            source_fetcher=RunNextClient(),
-            event_extractor=RunNextParser(),
+            source_fetcher=RunNextClient(
+                source_url=settings.runnext_source.source_url,
+                source_name=settings.runnext_source.source_name,
+            ),
+            event_extractor=RunNextParser(
+                fallback_url=settings.runnext_fallback_url,
+            ),
         ),
         SourceCrawler(
-            source_fetcher=Run1080Client(),
-            event_extractor=Run1080Parser(),
+            source_fetcher=Run1080Client(
+                source_url=settings.run1080_source.source_url,
+                source_name=settings.run1080_source.source_name,
+            ),
+            event_extractor=Run1080Parser(
+                mini_url_template=settings.run1080_mini_url_template,
+                event_url_template=settings.run1080_event_url_template,
+            ),
             detail_fetcher=Mara1080DetailClient(),
         ),
         SourceCrawler(
-            source_fetcher=PokemonRunTworldClient(),
-            event_extractor=PokemonRunTworldParser(),
+            source_fetcher=PokemonRunTworldClient(
+                source_url=settings.pokemon_run_source.source_url,
+                source_name=settings.pokemon_run_source.source_name,
+            ),
+            event_extractor=PokemonRunTworldParser(
+                link_url=settings.pokemon_run_source.source_url,
+                official_website_url=settings.pokemon_run_official_url,
+            ),
         ),
         SourceCrawler(
-            source_fetcher=JtbcMarathonClient(),
-            event_extractor=JtbcMarathonParser(),
+            source_fetcher=JtbcMarathonClient(
+                source_url=settings.jtbc_source.source_url,
+                source_name=settings.jtbc_source.source_name,
+            ),
+            event_extractor=JtbcMarathonParser(
+                official_url=settings.jtbc_source.source_url,
+            ),
         ),
         SourceCrawler(
-            source_fetcher=SeoulMarathonClient(),
-            event_extractor=SeoulMarathonParser(),
+            source_fetcher=SeoulMarathonClient(
+                source_url=settings.seoul_marathon_source.source_url,
+                source_name=settings.seoul_marathon_source.source_name,
+            ),
+            event_extractor=SeoulMarathonParser(
+                detail_url=settings.seoul_marathon_detail_url,
+            ),
             detail_fetcher=SeoulMarathonDetailClient(),
         ),
     ]
@@ -124,6 +230,10 @@ def create_crawler_app() -> CronRunner:
         source_crawlers=source_crawlers,
         event_store=_create_event_store(settings),
         event_watch_store=_create_event_watch_store(settings),
+        source_registry_store=_create_source_registry_store(settings),
+        source_registry_seeds=_build_source_registry_seeds(settings),
+        source_priority=settings.source_priority,
+        watch_seed_excluded_sources=settings.watch_seed_excluded_sources,
         raw_data_store=_create_raw_data_store(settings),
         raw_done_retention_days=settings.raw_done_retention_days,
         raw_error_retention_days=settings.raw_error_retention_days,

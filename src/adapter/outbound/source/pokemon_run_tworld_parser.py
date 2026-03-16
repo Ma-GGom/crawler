@@ -24,6 +24,10 @@ LOCATION_TERMINATORS = ("포켓몬", "티켓", "갤럭시", "예매", "일정", 
 
 
 class PokemonRunTworldParser(EventExtractPort):
+    def __init__(self, link_url: str, official_website_url: str) -> None:
+        self._link_url = link_url
+        self._official_website_url = official_website_url
+
     def extract(self, html: str) -> list[MarathonEvent]:
         text = self._extract_normalized_text(html)
         title = self._extract_title(text)
@@ -42,8 +46,8 @@ class PokemonRunTworldParser(EventExtractPort):
                 date_text=event_date.isoformat(),
                 title=title,
                 location=location,
-                link_url="https://shop.tworld.co.kr/exhibition/view?exhibitionId=P00000498",
-                official_website_url="https://pokemonkorea.co.kr/PokemonRUN2026/menu715",
+                link_url=self._link_url,
+                official_website_url=self._official_website_url,
                 registration_period=self._build_registration_period(
                     registration_start,
                     registration_end,

@@ -5,8 +5,6 @@ import requests
 from domain.model.source_payload import SourcePayload
 from port.outbound.source_fetch_port import SourceFetchPort
 
-SOURCE_URL = "http://www.run1080.com/new/index.php?sub=sub01_m01_c01"
-SOURCE_NAME = "run1080.com"
 DEFAULT_TIMEOUT_SECONDS = 10
 DEFAULT_SEARCH_YEAR_OFFSETS = (-1, 0, 1)
 DEFAULT_ENCODING = "euc-kr"
@@ -21,8 +19,8 @@ DEFAULT_USER_AGENT = (
 class Run1080Client(SourceFetchPort):
     def __init__(
         self,
-        source_url: str = SOURCE_URL,
-        source_name: str = SOURCE_NAME,
+        source_url: str,
+        source_name: str,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         search_year_offsets: tuple[int, ...] = DEFAULT_SEARCH_YEAR_OFFSETS,
         user_agent: str = DEFAULT_USER_AGENT,
