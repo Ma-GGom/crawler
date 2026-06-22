@@ -1,12 +1,29 @@
+import logging
+
 from adapter.inbound.scheduler.cron_runner import CronRunner
+from adapter.outbound.persistence.multi_store import (
+    MultiEventStore,
+    MultiEventWatchStore,
+    MultiRawDataStore,
+    MultiSourceRegistryStore,
+)
+from adapter.outbound.persistence.postgres_health_checker import (
+    assert_postgres_healthy,
+    redact_dsn,
+)
 from adapter.outbound.source.marathon_pe_client import MarathonPeClient
 from adapter.outbound.source.marathon_pe_detail_client import MarathonPeDetailClient
 from adapter.outbound.source.marathon_pe_parser import MarathonPeParser
+from adapter.outbound.source.naver_search_client import NaverSearchClient
+from adapter.outbound.source.naver_search_parser import NaverSearchParser
 from adapter.outbound.source.chuncheon_notice_client import ChuncheonNoticeClient
 from adapter.outbound.source.chuncheon_notice_detail_client import (
     ChuncheonNoticeDetailClient,
 )
 from adapter.outbound.source.chuncheon_notice_parser import ChuncheonNoticeParser
+from adapter.outbound.source.dtrail_client import DtrailClient
+from adapter.outbound.source.dtrail_parser import DtrailParser
+from adapter.outbound.source.image_ocr import ImageTextOcrReader
 from adapter.outbound.source.jtbc_marathon_client import JtbcMarathonClient
 from adapter.outbound.source.jtbc_marathon_parser import JtbcMarathonParser
 from adapter.outbound.source.onoffmix_client import OnOffMixClient
@@ -33,72 +50,129 @@ from port.outbound.event_store_port import EventStorePort
 from port.outbound.raw_data_store_port import RawDataStorePort
 from port.outbound.source_registry_port import SourceRegistryPort
 
+logger = logging.getLogger(__name__)
+
+
+def _resolve_database_urls(settings: CrawlerSettings) -> list[str]:
+    urls: list[str] = []
+    for dsn in (settings.database_url, settings.backup_database_url):
+        if not dsn:
+            continue
+        if dsn not in urls:
+            urls.append(dsn)
+    return urls
+
+
+def _run_database_healthcheck(settings: CrawlerSettings) -> None:
+    if not settings.database_healthcheck_enabled:
+        logger.info("DB 헬스체크 비활성화", extra={"enabled": False})
+        return
+
+    db_urls = _resolve_database_urls(settings)
+    if not db_urls:
+        logger.warning("DB URL 미설정으로 헬스체크를 건너뜀")
+        return
+
+    for dsn in db_urls:
+        assert_postgres_healthy(
+            dsn,
+            connect_timeout_seconds=settings.database_connect_timeout_seconds,
+        )
+        logger.info(
+            "DB 헬스체크 통과",
+            extra={"database": redact_dsn(dsn)},
+        )
+
 
 def _create_event_store(settings: CrawlerSettings) -> EventStorePort | None:
-    database_url = settings.database_url
-    if not database_url:
+    db_urls = _resolve_database_urls(settings)
+    if not db_urls:
         return None
 
     from adapter.outbound.persistence.postgres_event_repository import (
         PostgresEventRepository,
     )
 
-    return PostgresEventRepository(
-        dsn=database_url,
-        table_name=settings.marathon_event_table,
-    )
+    stores: list[EventStorePort] = [
+        PostgresEventRepository(
+            dsn=dsn,
+            table_name=settings.marathon_event_table,
+        )
+        for dsn in db_urls
+    ]
+    if len(stores) == 1:
+        return stores[0]
+    return MultiEventStore(stores)
 
 
 def _create_raw_data_store(settings: CrawlerSettings) -> RawDataStorePort | None:
-    database_url = settings.database_url
-    if not database_url:
+    db_urls = _resolve_database_urls(settings)
+    if not db_urls:
         return None
 
     from adapter.outbound.persistence.postgres_raw_crawled_data_repository import (
         PostgresRawCrawledDataRepository,
     )
 
-    return PostgresRawCrawledDataRepository(
-        dsn=database_url,
-        table_name=settings.raw_data_table,
-    )
+    stores: list[RawDataStorePort] = [
+        PostgresRawCrawledDataRepository(
+            dsn=dsn,
+            table_name=settings.raw_data_table,
+        )
+        for dsn in db_urls
+    ]
+    if len(stores) == 1:
+        return stores[0]
+    return MultiRawDataStore(stores)
 
 
 def _create_event_watch_store(settings: CrawlerSettings) -> EventWatchPort | None:
-    database_url = settings.database_url
-    if not database_url:
+    db_urls = _resolve_database_urls(settings)
+    if not db_urls:
         return None
 
     from adapter.outbound.persistence.postgres_event_watch_repository import (
         PostgresEventWatchRepository,
     )
 
-    return PostgresEventWatchRepository(
-        dsn=database_url,
-        watch_table_name=settings.event_watch_table,
-        seed_table_name=settings.event_watch_seed_table,
-    )
+    stores: list[EventWatchPort] = [
+        PostgresEventWatchRepository(
+            dsn=dsn,
+            watch_table_name=settings.event_watch_table,
+            seed_table_name=settings.event_watch_seed_table,
+        )
+        for dsn in db_urls
+    ]
+    if len(stores) == 1:
+        return stores[0]
+    return MultiEventWatchStore(stores)
 
 
 def _create_source_registry_store(
     settings: CrawlerSettings,
 ) -> SourceRegistryPort | None:
-    database_url = settings.database_url
-    if not database_url:
+    db_urls = _resolve_database_urls(settings)
+    if not db_urls:
         return None
 
     from adapter.outbound.persistence.postgres_source_registry_repository import (
         PostgresSourceRegistryRepository,
     )
 
-    return PostgresSourceRegistryRepository(
-        dsn=database_url,
-        table_name=settings.source_registry_table,
-    )
+    stores: list[SourceRegistryPort] = [
+        PostgresSourceRegistryRepository(
+            dsn=dsn,
+            table_name=settings.source_registry_table,
+        )
+        for dsn in db_urls
+    ]
+    if len(stores) == 1:
+        return stores[0]
+    return MultiSourceRegistryStore(stores)
 
 
 def _build_source_registry_seeds(settings: CrawlerSettings) -> list[SourceRegistrySeed]:
-    return [
+    seeds = [
         SourceRegistrySeed(
             source_name=settings.marathon_pe_source.source_name,
             source_url=settings.marathon_pe_source.source_url,
@@ -139,11 +213,36 @@ def _build_source_registry_seeds(settings: CrawlerSettings) -> list[SourceRegist
             source_url=settings.seoul_marathon_source.source_url,
             source_kind="OFFICIAL",
         ),
+        SourceRegistrySeed(
+            source_name=settings.dtrail_source.source_name,
+            source_url=settings.dtrail_source.source_url,
+            source_kind="OFFICIAL",
+        ),
     ]
+    if settings.naver_discovery_enabled and settings.naver_discovery_source is not None:
+        seeds.append(
+            SourceRegistrySeed(
+                source_name=settings.naver_discovery_source.source_name,
+                source_url=settings.naver_discovery_source.source_url,
+                source_kind="DISCOVERY",
+            )
+        )
+    return seeds
 
 
 def create_crawler_app() -> CronRunner:
     settings = load_settings()
+    _run_database_healthcheck(settings)
+
+    dtrail_image_text_reader = None
+    if settings.dtrail_ocr_enabled:
+        dtrail_image_text_reader = ImageTextOcrReader(
+            language=settings.dtrail_ocr_language,
+            tesseract_cmd=settings.dtrail_ocr_tesseract_cmd,
+        ).read_text
+    else:
+        logger.info("dtrail OCR 비활성화", extra={"enabled": False})
+
     source_crawlers = [
         SourceCrawler(
             source_fetcher=MarathonPeClient(
@@ -224,7 +323,49 @@ def create_crawler_app() -> CronRunner:
             ),
             detail_fetcher=SeoulMarathonDetailClient(),
         ),
+        SourceCrawler(
+            source_fetcher=DtrailClient(
+                source_url=settings.dtrail_source.source_url,
+                source_name=settings.dtrail_source.source_name,
+            ),
+            event_extractor=DtrailParser(
+                source_url=settings.dtrail_source.source_url,
+                link_url=settings.dtrail_source.source_url,
+                official_website_url=settings.dtrail_source.source_url,
+                image_text_reader=dtrail_image_text_reader,
+                max_images=settings.dtrail_ocr_max_images,
+            ),
+        ),
     ]
+    if (
+        settings.naver_discovery_enabled
+        and settings.naver_discovery_source is not None
+        and settings.naver_client_id is not None
+        and settings.naver_client_secret is not None
+    ):
+        source_crawlers.append(
+            SourceCrawler(
+                source_fetcher=NaverSearchClient(
+                    source_url=settings.naver_discovery_source.source_url,
+                    source_name=settings.naver_discovery_source.source_name,
+                    client_id=settings.naver_client_id,
+                    client_secret=settings.naver_client_secret,
+                    queries=settings.naver_discovery_queries,
+                    display=settings.naver_discovery_display,
+                ),
+                event_extractor=NaverSearchParser(),
+            )
+        )
+    else:
+        logger.info(
+            "네이버 발견 소스 비활성화",
+            extra={
+                "enabled": settings.naver_discovery_enabled,
+                "has_source": settings.naver_discovery_source is not None,
+                "has_client_id": settings.naver_client_id is not None,
+                "has_client_secret": settings.naver_client_secret is not None,
+            },
+        )
 
     crawl_service = CrawlSourceService(
         source_crawlers=source_crawlers,

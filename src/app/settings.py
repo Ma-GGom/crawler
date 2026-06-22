@@ -13,6 +13,9 @@ class SourceEndpoint:
 class CrawlerSettings:
     env: str
     database_url: str | None
+    backup_database_url: str | None
+    database_healthcheck_enabled: bool
+    database_connect_timeout_seconds: int
     marathon_event_table: str
     event_watch_table: str
     event_watch_seed_table: str
@@ -25,6 +28,13 @@ class CrawlerSettings:
     pokemon_run_source: SourceEndpoint
     jtbc_source: SourceEndpoint
     seoul_marathon_source: SourceEndpoint
+    dtrail_source: SourceEndpoint
+    naver_discovery_enabled: bool
+    naver_discovery_source: SourceEndpoint | None
+    naver_client_id: str | None
+    naver_client_secret: str | None
+    naver_discovery_queries: tuple[str, ...]
+    naver_discovery_display: int
     marathon_pe_detail_base_url: str
     onoffmix_base_url: str
     runnext_fallback_url: str
@@ -32,6 +42,10 @@ class CrawlerSettings:
     run1080_event_url_template: str
     pokemon_run_official_url: str
     seoul_marathon_detail_url: str
+    dtrail_ocr_enabled: bool
+    dtrail_ocr_language: str
+    dtrail_ocr_max_images: int
+    dtrail_ocr_tesseract_cmd: str | None
     source_priority: dict[str, int]
     watch_seed_excluded_sources: set[str]
     raw_data_table: str
@@ -57,6 +71,15 @@ def load_settings() -> CrawlerSettings:
     )
 
     database_url = os.getenv("CRAWLER_DATABASE_URL") or os.getenv("DATABASE_URL")
+    backup_database_url = os.getenv("CRAWLER_BACKUP_DATABASE_URL")
+    database_healthcheck_enabled = _parse_bool(
+        os.getenv("CRAWLER_DB_HEALTHCHECK_ENABLED"),
+        default=True,
+    )
+    database_connect_timeout_seconds = _parse_positive_int(
+        os.getenv("CRAWLER_DB_CONNECT_TIMEOUT_SECONDS"),
+        default_value=5,
+    )
     marathon_event_table = os.getenv("CRAWLER_MARATHON_EVENT_TABLE", "marathon_event")
     event_watch_table = os.getenv("CRAWLER_EVENT_WATCH_TABLE", "marathon_event_watch")
     event_watch_seed_table = os.getenv(
@@ -75,6 +98,38 @@ def load_settings() -> CrawlerSettings:
     pokemon_run_source = _load_source_endpoint("CRAWLER_SOURCE_POKEMON_RUN")
     jtbc_source = _load_source_endpoint("CRAWLER_SOURCE_JTBC")
     seoul_marathon_source = _load_source_endpoint("CRAWLER_SOURCE_SEOUL_MARATHON")
+    dtrail_source = _load_source_endpoint("CRAWLER_SOURCE_DTRAIL")
+    naver_discovery_enabled = _parse_bool(
+        os.getenv("CRAWLER_NAVER_DISCOVERY_ENABLED"),
+        default=False,
+    )
+    naver_discovery_source: SourceEndpoint | None = None
+    naver_client_id: str | None = None
+    naver_client_secret: str | None = None
+    if naver_discovery_enabled:
+        naver_source_name = _read_env(
+            "CRAWLER_SOURCE_NAVER_DISCOVERY_NAME",
+            default_value="naver-search-discovery",
+        )
+        naver_source_url = _read_env(
+            "CRAWLER_SOURCE_NAVER_DISCOVERY_URL",
+            default_value="https://openapi.naver.com/v1/search/webkr.json",
+        )
+        if naver_source_name is not None and naver_source_url is not None:
+            naver_discovery_source = SourceEndpoint(
+                source_name=naver_source_name,
+                source_url=naver_source_url,
+            )
+        naver_client_id = _read_env("CRAWLER_NAVER_CLIENT_ID")
+        naver_client_secret = _read_env("CRAWLER_NAVER_CLIENT_SECRET")
+    naver_discovery_queries = _parse_csv_tuple(
+        os.getenv("CRAWLER_NAVER_DISCOVERY_QUERIES"),
+        default_values=("마라톤 일정", "러닝 대회", "테마런"),
+    )
+    naver_discovery_display = _parse_positive_int(
+        os.getenv("CRAWLER_NAVER_DISCOVERY_DISPLAY"),
+        default_value=30,
+    )
     marathon_pe_detail_base_url = _require_env("CRAWLER_SOURCE_MARATHON_PE_DETAIL_BASE_URL")
     onoffmix_base_url = _require_env("CRAWLER_SOURCE_ONOFFMIX_BASE_URL")
     runnext_fallback_url = _require_env("CRAWLER_SOURCE_RUNNEXT_FALLBACK_URL")
@@ -82,6 +137,18 @@ def load_settings() -> CrawlerSettings:
     run1080_event_url_template = _require_env("CRAWLER_SOURCE_RUN1080_EVENT_URL_TEMPLATE")
     pokemon_run_official_url = _require_env("CRAWLER_SOURCE_POKEMON_RUN_OFFICIAL_URL")
     seoul_marathon_detail_url = _require_env("CRAWLER_SOURCE_SEOUL_MARATHON_DETAIL_URL")
+    dtrail_ocr_enabled = _parse_bool(
+        os.getenv("CRAWLER_DTRAIL_OCR_ENABLED"),
+        default=True,
+    )
+    dtrail_ocr_language = (
+        _read_env("CRAWLER_DTRAIL_OCR_LANGUAGE", default_value="kor+eng") or "kor+eng"
+    )
+    dtrail_ocr_max_images = _parse_positive_int(
+        os.getenv("CRAWLER_DTRAIL_OCR_MAX_IMAGES"),
+        default_value=20,
+    )
+    dtrail_ocr_tesseract_cmd = _read_env("CRAWLER_DTRAIL_TESSERACT_CMD")
     source_priority = _parse_source_priority(os.getenv("CRAWLER_SOURCE_PRIORITY"))
     watch_seed_excluded_sources = _parse_csv_set(
         os.getenv("CRAWLER_WATCH_SEED_EXCLUDED_SOURCES")
@@ -100,6 +167,9 @@ def load_settings() -> CrawlerSettings:
     return CrawlerSettings(
         env=env_name,
         database_url=database_url,
+        backup_database_url=backup_database_url,
+        database_healthcheck_enabled=database_healthcheck_enabled,
+        database_connect_timeout_seconds=database_connect_timeout_seconds,
         marathon_event_table=marathon_event_table,
         event_watch_table=event_watch_table,
         event_watch_seed_table=event_watch_seed_table,
@@ -112,6 +182,13 @@ def load_settings() -> CrawlerSettings:
         pokemon_run_source=pokemon_run_source,
         jtbc_source=jtbc_source,
         seoul_marathon_source=seoul_marathon_source,
+        dtrail_source=dtrail_source,
+        naver_discovery_enabled=naver_discovery_enabled,
+        naver_discovery_source=naver_discovery_source,
+        naver_client_id=naver_client_id,
+        naver_client_secret=naver_client_secret,
+        naver_discovery_queries=naver_discovery_queries,
+        naver_discovery_display=naver_discovery_display,
         marathon_pe_detail_base_url=marathon_pe_detail_base_url,
         onoffmix_base_url=onoffmix_base_url,
         runnext_fallback_url=runnext_fallback_url,
@@ -119,6 +196,10 @@ def load_settings() -> CrawlerSettings:
         run1080_event_url_template=run1080_event_url_template,
         pokemon_run_official_url=pokemon_run_official_url,
         seoul_marathon_detail_url=seoul_marathon_detail_url,
+        dtrail_ocr_enabled=dtrail_ocr_enabled,
+        dtrail_ocr_language=dtrail_ocr_language,
+        dtrail_ocr_max_images=dtrail_ocr_max_images,
+        dtrail_ocr_tesseract_cmd=dtrail_ocr_tesseract_cmd,
         source_priority=source_priority,
         watch_seed_excluded_sources=watch_seed_excluded_sources,
         raw_data_table=raw_data_table,
@@ -187,6 +268,18 @@ def _require_env(key: str) -> str:
     return normalized
 
 
+def _read_env(key: str, default_value: str | None = None) -> str | None:
+    value = os.getenv(key)
+    if value is None:
+        value = default_value
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return normalized
+
+
 def _parse_csv_set(raw_value: str | None) -> set[str]:
     if raw_value is None or not raw_value.strip():
         return set()
@@ -196,6 +289,24 @@ def _parse_csv_set(raw_value: str | None) -> set[str]:
         if normalized:
             result.add(normalized)
     return result
+
+
+def _parse_csv_tuple(
+    raw_value: str | None,
+    *,
+    default_values: tuple[str, ...],
+) -> tuple[str, ...]:
+    if raw_value is None or not raw_value.strip():
+        return default_values
+
+    result: list[str] = []
+    for item in raw_value.split(","):
+        normalized = item.strip()
+        if normalized:
+            result.append(normalized)
+    if not result:
+        return default_values
+    return tuple(result)
 
 
 def _parse_source_priority(raw_value: str | None) -> dict[str, int]:
@@ -217,3 +328,26 @@ def _parse_source_priority(raw_value: str | None) -> dict[str, int]:
         except ValueError:
             continue
     return result
+
+
+def _parse_bool(raw_value: str | None, *, default: bool) -> bool:
+    if raw_value is None:
+        return default
+    normalized = raw_value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _parse_positive_int(raw_value: str | None, *, default_value: int) -> int:
+    if raw_value is None or not raw_value.strip():
+        return default_value
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        return default_value
+    if parsed <= 0:
+        return default_value
+    return parsed
