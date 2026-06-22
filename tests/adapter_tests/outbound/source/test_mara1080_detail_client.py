@@ -19,6 +19,7 @@ class Mara1080DetailClientTest(unittest.TestCase):
                 "startDate": "2026-01-04T09:00:00",
                 "registDeadline": "2025-12-16T00:00:00",
                 "eventsPageUrl": "https://mara1080.com/event/250b9e58-2837-4479-ad5d-cd989951075f",
+                "region": "대전엑스포시민광장",
             }
         }
         client = Mara1080DetailClient()
@@ -39,6 +40,7 @@ class Mara1080DetailClientTest(unittest.TestCase):
             "https://mara1080.com/event/250b9e58-2837-4479-ad5d-cd989951075f",
             detail.official_website_url,
         )
+        self.assertEqual("대전엑스포시민광장", detail.location)
 
 
 if __name__ == "__main__":

@@ -9,3 +9,4 @@ class MarathonEventDetail:
     registration_start_date: date | None = None
     registration_end_date: date | None = None
     event_date: date | None = None
+    location: str | None = None

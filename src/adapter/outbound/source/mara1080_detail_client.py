@@ -62,6 +62,7 @@ class Mara1080DetailClient(EventDetailFetchPort):
         reg_end = self._parse_iso_date(event_info.get("registDeadline"))
         reg_start = self._parse_iso_date(event_info.get("registStartDate"))
         official_url = self._extract_text(event_info.get("eventsPageUrl")) or fallback_url
+        location = self._extract_text(event_info.get("region"))
         registration_period = self._build_registration_period(reg_start, reg_end)
 
         return MarathonEventDetail(
@@ -70,6 +71,7 @@ class Mara1080DetailClient(EventDetailFetchPort):
             registration_start_date=reg_start,
             registration_end_date=reg_end,
             event_date=event_date,
+            location=location,
         )
 
     @staticmethod

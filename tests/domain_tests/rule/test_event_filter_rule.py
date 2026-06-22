@@ -24,29 +24,26 @@ class EventFilterRuleTest(unittest.TestCase):
         )
         self.assertTrue(is_actionable_event(event, today_kst=date(2026, 3, 10)))
 
-    def test_past_event_is_not_actionable(self) -> None:
+    def test_past_event_within_last_year_is_actionable_for_history(self) -> None:
         event = MarathonEvent(
-            date_text="3/1(일)",
+            date_text="2025-03-01",
             title="테스트",
             location="서울",
             link_url="http://example.com",
-            event_date=date(2026, 3, 1),
-        )
-        self.assertFalse(is_actionable_event(event, today_kst=date(2026, 3, 10)))
-
-    def test_future_event_is_actionable(self) -> None:
-        event = MarathonEvent(
-            date_text="4/1(수)",
-            title="테스트",
-            location="서울",
-            link_url="http://example.com",
-            registration_end_date=date(2026, 3, 25),
-            event_date=date(2026, 4, 1),
+            event_date=date(2025, 3, 1),
         )
         self.assertTrue(is_actionable_event(event, today_kst=date(2026, 3, 10)))
+
+    def test_event_older_than_last_year_is_not_actionable(self) -> None:
+        event = MarathonEvent(
+            date_text="2024-12-31",
+            title="테스트",
+            location="서울",
+            link_url="http://example.com",
+            event_date=date(2024, 12, 31),
+        )
+        self.assertFalse(is_actionable_event(event, today_kst=date(2026, 3, 10)))
 
 
 if __name__ == "__main__":
     unittest.main()
-
-

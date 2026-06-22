@@ -19,6 +19,7 @@ from domain.model.source_registry import SourceCrawlResult, SourceRegistrySeed
 from domain.rule.event_date_rule import infer_event_date_from_list_text
 from domain.rule.event_filter_rule import is_actionable_event
 from domain.rule.freshness_rule import is_fresh_payload
+from domain.rule.location_rule import REGION_UNKNOWN
 from domain.rule.rare_marathon_rule import match_rare_marathon_keywords
 from domain.rule.url_rule import normalize_url
 
@@ -228,6 +229,13 @@ class CrawlSourceService(CrawlSourceUseCase):
                                 or enriched.registration_end_date
                             ),
                             event_date=detail.event_date or enriched.event_date,
+                            location=(
+                                detail.location
+                                if detail.location
+                                and enriched.location.strip().lower()
+                                in {"", REGION_UNKNOWN}
+                                else enriched.location
+                            ),
                         )
 
                 if enriched.event_date is None:

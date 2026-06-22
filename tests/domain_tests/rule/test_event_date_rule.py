@@ -20,6 +20,18 @@ class EventDateRuleTest(unittest.TestCase):
         inferred = infer_event_date_from_list_text("잘못된값", today_kst=date(2026, 3, 10))
         self.assertIsNone(inferred)
 
+    def test_infer_from_iso_like_full_date(self) -> None:
+        inferred = infer_event_date_from_list_text("2026.10.03 대회", today_kst=date(2026, 3, 10))
+        self.assertEqual(date(2026, 10, 3), inferred)
+
+    def test_infer_from_korean_full_date(self) -> None:
+        inferred = infer_event_date_from_list_text("2026년 11월 1일 개최", today_kst=date(2026, 3, 10))
+        self.assertEqual(date(2026, 11, 1), inferred)
+
+    def test_infer_from_korean_month_day(self) -> None:
+        inferred = infer_event_date_from_list_text("5월 9일(토)", today_kst=date(2026, 3, 10))
+        self.assertEqual(date(2026, 5, 9), inferred)
+
 
 if __name__ == "__main__":
     unittest.main()

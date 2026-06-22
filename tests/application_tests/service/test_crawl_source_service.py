@@ -60,6 +60,13 @@ class FakeDetailFetcher(EventDetailFetchPort):
         )
 
 
+class LocationDetailFetcher(EventDetailFetchPort):
+    def fetch_detail(self, detail_url: str) -> MarathonEventDetail | None:
+        return MarathonEventDetail(
+            location="대전엑스포시민광장",
+        )
+
+
 class EmptyDetailFetcher(EventDetailFetchPort):
     def fetch_detail(self, detail_url: str) -> MarathonEventDetail | None:
         return MarathonEventDetail(
@@ -213,6 +220,33 @@ class CrawlSourceServiceTest(unittest.TestCase):
         events = service.crawl()
 
         self.assertEqual("2026-12-31", events[0].event_date.isoformat())
+
+    def test_update_location_from_detail_when_unknown(self) -> None:
+        fetched_at = datetime.now(KST)
+        payload = SourcePayload(
+            source_name="test-source",
+            source_url="https://example.com/list",
+            html="<table></table>",
+            fetched_at_kst=fetched_at,
+        )
+        service = CrawlSourceService(
+            source_fetcher=FakeSourceFetcher(payload),
+            event_extractor=FakeExtractor(
+                [
+                    MarathonEvent(
+                        date_text="12/31(수)",
+                        title="테스트 대회",
+                        location="unknown",
+                        link_url="https://example.com/detail",
+                    )
+                ]
+            ),
+            detail_fetcher=LocationDetailFetcher(),
+        )
+
+        events = service.crawl()
+
+        self.assertEqual("대전엑스포시민광장", events[0].location)
 
     def test_keep_future_event_even_when_registration_closed(self) -> None:
         class ClosedDetailFetcher(EventDetailFetchPort):

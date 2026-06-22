@@ -2,7 +2,9 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from adapter.outbound.persistence.entity.marathon_event_row import MarathonEventRow
 from domain.model.marathon_event import MarathonEvent
+from domain.rule.distance_rule import extract_distances_from_title
 from domain.rule.event_scale_rule import classify_event_scale, is_major_scale
+from domain.rule.location_rule import resolve_event_region
 from domain.rule.url_rule import normalize_url
 
 KST = timezone(timedelta(hours=9), name="KST")
@@ -19,7 +21,11 @@ class MarathonEventMapper:
         return MarathonEventRow(
             title=event.title.strip() or None,
             event_date=event.event_date,
-            region=MarathonEventMapper._normalize_region(event.location),
+            region=MarathonEventMapper._normalize_region(
+                location=event.location,
+                title=event.title,
+                link_url=event.official_website_url or event.link_url,
+            ),
             distances=MarathonEventMapper._extract_distances(event.title),
             reg_start_date=MarathonEventMapper._to_kst_datetime(reg_start_at),
             reg_end_date=MarathonEventMapper._to_kst_datetime(event.registration_end_date),
@@ -33,25 +39,12 @@ class MarathonEventMapper:
         )
 
     @staticmethod
-    def _normalize_region(location: str) -> str:
-        normalized = location.strip()
-        if not normalized:
-            return "UNKNOWN"
-        return normalized.split()[0]
+    def _normalize_region(*, location: str, title: str, link_url: str) -> str:
+        return resolve_event_region(location, title=title, link_url=link_url)
 
     @staticmethod
     def _extract_distances(title: str) -> list[str]:
-        normalized = title.upper()
-        distances: list[str] = []
-        if "5K" in normalized:
-            distances.append("5K")
-        if "10K" in normalized or "10KM" in normalized:
-            distances.append("10K")
-        if "HALF" in normalized or "하프" in title:
-            distances.append("HALF")
-        if "FULL" in normalized or "풀코스" in title:
-            distances.append("FULL")
-        return distances
+        return extract_distances_from_title(title)
 
     @staticmethod
     def _to_kst_datetime(value: date | None) -> datetime | None:
@@ -65,6 +58,8 @@ class MarathonEventMapper:
         reg_start = event.registration_start_date
         reg_end = event.registration_end_date
 
+        if event.event_date is not None and event.event_date < today:
+            return "CLOSED"
         if reg_end is not None and today > reg_end:
             return "CLOSED"
         if reg_start is not None and today < reg_start:
